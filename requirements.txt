@@ -1,0 +1,17 @@
+--find-links https://download.pytorch.org/whl/torch_stable.html
+torch==2.1.2
+transformers==4.36.2
+watchdog==3.0.0
+langchain==0.1.12
+chromadb==0.4.22
+python-dotenv==1.0.0
+markdown==3.5.2
+llama-cpp-python==0.2.39
+sentence-transformers==2.2.2
+huggingface-hub==0.19.4
+tiktoken==0.6.0
+fastapi==0.109.2
+uvicorn==0.27.1
+scikit-learn==1.4.0
+plotly==5.18.0
+numpy==1.26.4 
