@@ -147,176 +147,80 @@ async def get_plot3d(query: str = None):
     """Genera il plot 3D degli embedding."""
     try:
         # Ottieni tutti gli embedding dal database
-        collection_data = embeddings_manager.collection.get(include=["embeddings", "documents", "metadatas"])
+        results = embeddings_manager.collection.get(
+            include=["embeddings", "metadatas", "documents"]
+        )
         
-        # Verifica che tutti i dati necessari siano presenti
-        if not collection_data or "embeddings" not in collection_data or not collection_data["embeddings"]:
-            logger.warning("Nessun dato trovato nel database")
-            return {
-                "data": [],
-                "layout": {
-                    "title": "Nessun dato disponibile",
-                    "annotations": [{
-                        "text": "Nessun embedding trovato nel database",
-                        "xref": "paper",
-                        "yref": "paper",
-                        "showarrow": False,
-                        "font": {"size": 20}
-                    }]
-                }
-            }
-
-        # Converti in array numpy e verifica le dimensioni
-        embeddings = np.array(collection_data["embeddings"])
-        n_samples = len(embeddings)
+        if not results["embeddings"]:
+            return {"error": "Nessun embedding trovato nel database"}
+            
+        # Converti gli embedding in numpy array
+        embeddings = np.array(results["embeddings"])
         
-        if n_samples == 0:
-            logger.warning("Array embeddings vuoto")
-            return {"data": [], "layout": {}}
-
-        # Calcola la perplexity appropriata
-        perplexity = min(30, max(5, n_samples // 10))
+        # Riduci la dimensionalità a 3D usando t-SNE
+        tsne = TSNE(n_components=3, random_state=42)
+        embeddings_3d = tsne.fit_transform(embeddings)
         
-        try:
-            # Riduci le dimensioni usando t-SNE con gestione errori
-            tsne = TSNE(n_components=3, random_state=42, perplexity=perplexity)
-            reduced_vectors = tsne.fit_transform(embeddings)
-        except Exception as tsne_error:
-            logger.error(f"Errore durante la riduzione dimensionale: {str(tsne_error)}")
-            return {"data": [], "layout": {"title": "Errore nella riduzione dimensionale"}}
-
-        # Verifica che i vettori ridotti siano validi
-        if reduced_vectors.shape[0] != n_samples or reduced_vectors.shape[1] != 3:
-            logger.error(f"Dimensioni non valide dei vettori ridotti: {reduced_vectors.shape}")
-            return {"data": [], "layout": {"title": "Errore nelle dimensioni dei vettori"}}
-
-        # Crea il plot base
-        try:
-            base_trace = go.Scatter3d(
-                x=reduced_vectors[:, 0].tolist(),
-                y=reduced_vectors[:, 1].tolist(),
-                z=reduced_vectors[:, 2].tolist(),
-                mode='markers',
-                marker=dict(
-                    size=5,
-                    color='lightgrey',
-                    opacity=0.7
-                ),
-                text=[
-                    f"File: {m.get('file_path', 'N/A')}<br>"
-                    f"Chunk: {i+1}/{n_samples}"
-                    for i, m in enumerate(collection_data["metadatas"])
-                ],
-                hoverinfo='text',
-                name='Tutti i documenti'
-            )
-        except Exception as trace_error:
-            logger.error(f"Errore nella creazione del trace base: {str(trace_error)}")
-            return {"data": [], "layout": {"title": "Errore nella creazione del grafico"}}
-
-        data = [base_trace]
+        # Prepara i dati per il plot
+        plot_data = []
         
-        # Se c'è una query, evidenzia i documenti più simili
-        if query and query.strip():
-            logger.info(f"Ricerca per query: {query}")
+        # Colori per i punti
+        colors = ['blue'] * len(embeddings_3d)
+        
+        # Se c'è una query, cerca i documenti simili
+        if query:
             try:
-                results = embeddings_manager.find_similar_documents(query, n_results=5)
-                if not results:
-                    logger.warning("Nessun risultato trovato per la query")
-                    return {
-                        "data": data,
-                        "layout": go.Layout(
-                            title='Visualizzazione 3D degli Embedding (nessun risultato trovato)',
-                            scene=dict(
-                                xaxis_title='Dimensione 1',
-                                yaxis_title='Dimensione 2',
-                                zaxis_title='Dimensione 3'
-                            ),
-                            margin=dict(l=0, r=0, b=0, t=30),
-                            showlegend=True
-                        )
-                    }
-
-                # Crea un dizionario per mappare i metadati agli indici
-                metadata_to_index = {}
-                for i, metadata in enumerate(collection_data["metadatas"]):
-                    key = (
-                        str(metadata.get('file_path', '')),
-                        str(metadata.get('chunk_index', -1))
-                    )
-                    metadata_to_index[key] = i
-
-                # Trova gli indici corrispondenti
-                similar_indices = []
-                for result in results:
-                    if not result or 'metadata' not in result:
-                        continue
-                    key = (
-                        str(result['metadata'].get('file_path', '')),
-                        str(result['metadata'].get('chunk_index', -1))
-                    )
-                    if key in metadata_to_index:
-                        idx = metadata_to_index[key]
-                        if 0 <= idx < n_samples:
-                            similar_indices.append(idx)
-
-                if similar_indices:
-                    # Crea il trace per i punti evidenziati
-                    highlighted_trace = go.Scatter3d(
-                        x=[reduced_vectors[i, 0] for i in similar_indices],
-                        y=[reduced_vectors[i, 1] for i in similar_indices],
-                        z=[reduced_vectors[i, 2] for i in similar_indices],
-                        mode='markers',
-                        marker=dict(
-                            size=8,
-                            color='red',
-                            opacity=1
-                        ),
-                        text=[
-                            f"File: {collection_data['metadatas'][i].get('file_path', 'N/A')}<br>"
-                            f"Rilevanza: {(1 - results[j]['distance']) * 100:.1f}%<br>"
-                            f"Contenuto: {collection_data['documents'][i][:100]}..."
-                            for j, i in enumerate(similar_indices)
-                            if i < len(collection_data['documents'])
-                        ],
-                        hoverinfo='text',
-                        name='Documenti simili'
-                    )
-                    data.append(highlighted_trace)
-                else:
-                    logger.warning("Nessun indice valido trovato per i documenti simili")
-
-            except Exception as search_error:
-                logger.error(f"Errore durante la ricerca: {str(search_error)}")
-                # Continua con il plot base se la ricerca fallisce
-
-        layout = go.Layout(
+                similar_docs = embeddings_manager.find_similar_documents(query, n_results=5)
+                similar_paths = [doc["metadata"]["file_path"] for doc in similar_docs]
+                
+                # Evidenzia i documenti simili in rosso
+                for i, metadata in enumerate(results["metadatas"]):
+                    if metadata["file_path"] in similar_paths:
+                        colors[i] = 'red'
+            except Exception as e:
+                logger.error(f"Errore nella ricerca di documenti simili: {str(e)}")
+        
+        # Crea il plot
+        fig = go.Figure(data=[go.Scatter3d(
+            x=embeddings_3d[:, 0],
+            y=embeddings_3d[:, 1],
+            z=embeddings_3d[:, 2],
+            mode='markers',
+            marker=dict(
+                size=8,
+                color=colors,
+                opacity=0.8
+            ),
+            text=[f"File: {metadata['file_path']}<br>Chunk: {metadata['chunk_index'] + 1}/{metadata['total_chunks']}" 
+                  for metadata in results["metadatas"]],
+            hoverinfo='text'
+        )])
+        
+        # Aggiorna il layout
+        fig.update_layout(
             title='Visualizzazione 3D degli Embedding',
             scene=dict(
-                xaxis_title='Dimensione 1',
-                yaxis_title='Dimensione 2',
-                zaxis_title='Dimensione 3'
+                xaxis_title='X',
+                yaxis_title='Y',
+                zaxis_title='Z'
             ),
-            margin=dict(l=0, r=0, b=0, t=30),
-            showlegend=True
+            margin=dict(l=0, r=0, t=30, b=0)
         )
-
-        return {"data": data, "layout": layout}
-    except Exception as e:
-        logger.error(f"Errore durante la generazione del plot 3D: {str(e)}")
+        
+        # Converti il plot in HTML
+        plot_html = fig.to_html(full_html=False)
+        
         return {
-            "data": [],
-            "layout": {
-                "title": "Errore nella generazione del plot",
-                "annotations": [{
-                    "text": str(e),
-                    "xref": "paper",
-                    "yref": "paper",
-                    "showarrow": False,
-                    "font": {"size": 14}
-                }]
+            "plot": plot_html,
+            "stats": {
+                "total_points": len(embeddings_3d),
+                "query": query if query else None
             }
         }
+        
+    except Exception as e:
+        logger.error(f"Errore nella generazione del plot 3D: {str(e)}")
+        return {"error": f"Errore nella generazione del plot: {str(e)}"}
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index():
@@ -467,7 +371,7 @@ async def search(request: SearchRequest):
             {
                 "document": result["document"],
                 "metadata": result["metadata"],
-                "similarity": 1 - result["distance"]
+                "similarity": result["relevance"]
             }
             for result in results
         ]

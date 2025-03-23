@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Visualizzatore 3D degli Embedding</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .search-container {
+            margin-bottom: 20px;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #plot-container {
+            width: 100%;
+            height: 600px;
+            margin-top: 20px;
+        }
+        .stats {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        .error {
+            color: red;
+            padding: 10px;
+            background-color: #ffebee;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Visualizzatore 3D degli Embedding</h1>
+        
+        <div class="search-container">
+            <input type="text" id="search-input" placeholder="Inserisci una query per evidenziare i documenti simili...">
+            <button onclick="updatePlot()">Cerca</button>
+        </div>
+        
+        <div id="plot-container"></div>
+        
+        <div id="stats" class="stats"></div>
+        
+        <div id="error" class="error" style="display: none;"></div>
+    </div>
+
+    <script>
+        let currentPlot = null;
+        
+        async function updatePlot() {
+            const searchInput = document.getElementById('search-input');
+            const query = searchInput.value.trim();
+            const errorDiv = document.getElementById('error');
+            const statsDiv = document.getElementById('stats');
+            
+            try {
+                const response = await fetch(`/plot3d?query=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    errorDiv.textContent = data.error;
+                    errorDiv.style.display = 'block';
+                    return;
+                }
+                
+                errorDiv.style.display = 'none';
+                
+                // Aggiorna il contenitore del plot
+                document.getElementById('plot-container').innerHTML = data.plot;
+                
+                // Aggiorna le statistiche
+                statsDiv.innerHTML = `
+                    <h3>Statistiche</h3>
+                    <p>Punti totali: ${data.stats.total_points}</p>
+                    ${data.stats.query ? `<p>Query corrente: ${data.stats.query}</p>` : ''}
+                `;
+                
+            } catch (error) {
+                errorDiv.textContent = `Errore: ${error.message}`;
+                errorDiv.style.display = 'block';
+            }
+        }
+        
+        // Carica il plot iniziale
+        updatePlot();
+    </script>
+</body>
+</html> 
